@@ -1,31 +1,30 @@
 # 小米互传桥接
 
-一个很小的 Android 中转应用：让“**小米互传桥接**”作为普通图标出现在原生 Android 分享面板中，然后把收到的文件转交给系统内置的 Xiaomi sender activity。
+这是一个实验性的 Android 分享接收器：它会出现在原生 `ACTION_SEND` / `ACTION_SEND_MULTIPLE` 分享面板中，接收文件后通过 MIUI 的 `IMiShareService` 搜索设备并发送。
 
-## 原理
+## 重要限制
 
-手机上的小米互传设备行由 MIUI 私有框架注入，不能通过普通 `ACTION_SEND` 注册直接复现。本应用注册标准 `ACTION_SEND`/`ACTION_SEND_MULTIPLE`，收到文件后显式转发到：
+HyperOS 的 `com.miui.mishare.connectivity/.MiShareService` 要求：
 
 ```text
-com.miui.newmidrive/.ui.SendFileIntermediaryActivity
+com.miui.mishare.PERMISSION.ALL  (signature|privileged)
 ```
 
-该组件在当前 HyperOS 系统上已经存在，并且注册了图片、视频、PDF 等标准分享入口。
+所以普通“点击安装”的 APK 无法调用该服务。普通安装仍可出现在原生分享面板，但点进去会显示权限提示；它不会跳转到小米云盘，也不会假装发送成功。
+
+要实际发送，需要把应用作为系统特权应用安装，并让系统授予上述权限，或使用与系统 MIShare 相同的签名。不同 HyperOS 版本的特权权限白名单和 SELinux 规则可能不同，不能仅靠 APK 自己绕过。
 
 ## 使用
 
-1. 构建并安装 Debug APK。
-2. 在文件管理器选择文件，点击分享。
-3. 选择“**小米互传桥接**”。
-4. 应用会跳转到小米互联发送界面。
+1. 安装 APK。
+2. 在文件管理器的原生分享面板选择“**小米互传桥接**”。
+3. 特权环境下应用会列出附近设备，点击设备即可发送。
 
-首次测试建议保持 MIUI 优化开启，并确认小米互传、蓝牙和附近设备权限正常。
+## 已验证环境
 
-## 限制
-
-- 这是对系统私有组件的兼容性桥接，不是官方 API。
-- HyperOS 更新后如果小米修改 `com.miui.newmidrive` 的 Activity 或参数，可能需要更新。
-- 应用本身不上传文件，也不申请网络权限。
+- 设备：Xiaomi 24122RKC7C
+- 系统：HyperOS `OS2.0.15.0.VOMCNXM` / Android 15
+- MiShare：`com.miui.mishare.connectivity` `3.3.1-103101`
 
 ## 构建
 
@@ -33,4 +32,4 @@ com.miui.newmidrive/.ui.SendFileIntermediaryActivity
 gradle assembleDebug
 ```
 
-生成的 APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。
+生成 `app/build/outputs/apk/debug/app-debug.apk`。
