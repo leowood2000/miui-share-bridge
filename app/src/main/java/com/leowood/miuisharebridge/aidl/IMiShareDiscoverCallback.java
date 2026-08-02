@@ -29,7 +29,9 @@ public interface IMiShareDiscoverCallback extends IInterface {
             }
             data.enforceInterface(DESCRIPTOR);
             if (code == UPDATED) {
-                onDeviceUpdated(data.readParcelable(RemoteDevice.class.getClassLoader()));
+                RemoteDevice device = data.readInt() != 0
+                        ? RemoteDevice.CREATOR.createFromParcel(data) : null;
+                onDeviceUpdated(device);
                 return true;
             }
             if (code == LOST) {
