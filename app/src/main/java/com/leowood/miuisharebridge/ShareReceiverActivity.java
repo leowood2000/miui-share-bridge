@@ -5,9 +5,13 @@ import android.content.ClipData;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.RemoteException;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.LinearLayout;
 import android.widget.ListView;
@@ -89,12 +93,23 @@ public final class ShareReceiverActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(40, 40, 40, 20);
+        root.setBackgroundColor(Color.rgb(248, 247, 255));
         status = new TextView(this);
         status.setTextSize(17);
+        status.setTextColor(Color.rgb(45, 45, 52));
         status.setText("正在连接小米互传…");
         root.addView(status, new LinearLayout.LayoutParams(-1, -2));
         ListView list = new ListView(this);
-        adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, labels);
+        adapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, labels) {
+            @Override public View getView(int position, View convertView, ViewGroup parent) {
+                TextView row = (TextView) super.getView(position, convertView, parent);
+                row.setTextColor(Color.rgb(35, 35, 42));
+                row.setTextSize(18);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setPadding(32, 0, 32, 0);
+                return row;
+            }
+        };
         list.setAdapter(adapter);
         list.setOnItemClickListener((parent, view, position, id) -> {
             if (position < labels.size()) sendTo(devices.get(new ArrayList<>(devices.keySet()).get(position)));
