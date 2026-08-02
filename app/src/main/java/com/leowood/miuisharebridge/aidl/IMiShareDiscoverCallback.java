@@ -1,16 +1,15 @@
 package com.leowood.miuisharebridge.aidl;
 
 import android.os.Binder;
+import android.os.Bundle;
 import android.os.IBinder;
 import android.os.IInterface;
 import android.os.Parcel;
 import android.os.RemoteException;
 
-import com.miui.mishare.RemoteDevice;
-
-/** Local Binder callback using MIShare's wire descriptor. */
+/** Local Binder callback using MIShare's wire format without loading MIUI classes. */
 public interface IMiShareDiscoverCallback extends IInterface {
-    void onDeviceUpdated(RemoteDevice device) throws RemoteException;
+    void onDeviceUpdated(String deviceId, Bundle extras) throws RemoteException;
     void onDeviceLost(String deviceId) throws RemoteException;
 
     abstract class Stub extends Binder implements IMiShareDiscoverCallback {
@@ -29,9 +28,13 @@ public interface IMiShareDiscoverCallback extends IInterface {
             }
             data.enforceInterface(DESCRIPTOR);
             if (code == UPDATED) {
-                RemoteDevice device = data.readInt() != 0
-                        ? RemoteDevice.CREATOR.createFromParcel(data) : null;
-                onDeviceUpdated(device);
+                String deviceId = null;
+                Bundle extras = null;
+                if (data.readInt() != 0) {
+                    deviceId = data.readString();
+                    extras = data.readBundle();
+                }
+                onDeviceUpdated(deviceId, extras);
                 return true;
             }
             if (code == LOST) {

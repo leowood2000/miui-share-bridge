@@ -15,8 +15,6 @@ import android.widget.TextView;
 
 import com.leowood.miuisharebridge.aidl.IMiShareDiscoverCallback;
 import com.leowood.miuisharebridge.aidl.IMiShareService;
-import com.miui.mishare.MiShareTask;
-import com.miui.mishare.RemoteDevice;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -26,7 +24,7 @@ import java.util.UUID;
 /** Receives ACTION_SEND and uses Xiaomi's private MiShare AIDL when privileged. */
 public final class ShareReceiverActivity extends Activity {
     private static final String TARGET_PACKAGE = "com.miui.mishare.connectivity";
-    private final Map<String, RemoteDevice> devices = new LinkedHashMap<>();
+    private final Map<String, ShareDevice> devices = new LinkedHashMap<>();
     private final ArrayList<String> labels = new ArrayList<>();
     private ArrayAdapter<String> adapter;
     private TextView status;
@@ -35,9 +33,9 @@ public final class ShareReceiverActivity extends Activity {
     private boolean bound;
 
     private final IMiShareDiscoverCallback callback = new IMiShareDiscoverCallback.Stub() {
-        @Override public void onDeviceUpdated(RemoteDevice device) {
-            if (device == null || device.getDeviceId() == null) return;
-            runOnUiThread(() -> addDevice(device));
+        @Override public void onDeviceUpdated(String deviceId, Bundle extras) {
+            if (deviceId == null) return;
+            runOnUiThread(() -> addDevice(new ShareDevice(deviceId, extras)));
         }
 
         @Override public void onDeviceLost(String deviceId) {
@@ -105,18 +103,16 @@ public final class ShareReceiverActivity extends Activity {
         setContentView(root);
     }
 
-    private void addDevice(RemoteDevice device) {
-        String id = device.getDeviceId();
-        String label = id;
-        Bundle extras = device.getExtras();
-        if (extras != null) {
-            String nickname = extras.getString(RemoteDevice.KEY_NICKNAME);
-            String model = extras.getString(RemoteDevice.KEY_DEVICE_MODEL);
+    private void addDevice(ShareDevice device) {
+        String label = device.deviceId;
+        if (device.extras != null) {
+            String nickname = device.extras.getString("nickname");
+            String model = device.extras.getString("device_model");
             if (nickname != null && !nickname.isEmpty()) label = nickname;
             else if (model != null && !model.isEmpty()) label = model;
         }
-        if (!devices.containsKey(id)) labels.add(label);
-        devices.put(id, device);
+        if (!devices.containsKey(device.deviceId)) labels.add(label);
+        devices.put(device.deviceId, device);
         adapter.notifyDataSetChanged();
         status.setText("选择要发送到的设备：");
     }
@@ -129,7 +125,7 @@ public final class ShareReceiverActivity extends Activity {
         adapter.notifyDataSetChanged();
     }
 
-    private void sendTo(RemoteDevice device) {
+    private void sendTo(ShareDevice device) {
         if (device == null || service == null) return;
         ClipData clipData = source.getClipData();
         if (clipData == null) {
@@ -140,16 +136,11 @@ public final class ShareReceiverActivity extends Activity {
             showError("分享请求没有文件 URI");
             return;
         }
-        MiShareTask task = new MiShareTask();
-        task.send = true;
-        task.taskId = UUID.randomUUID().toString();
-        task.count = clipData.getItemCount();
-        task.device = device;
-        task.clipData = clipData;
-        task.mimeType = source.getType();
         try {
-            service.send(task);
-            status.setText("已提交发送任务：" + task.count + " 个文件");
+            service.send(new IMiShareService.ShareTask(
+                    UUID.randomUUID().toString(), clipData.getItemCount(),
+                    device.deviceId, device.extras, clipData, source.getType()));
+            status.setText("已提交发送任务：" + clipData.getItemCount() + " 个文件");
         } catch (RemoteException error) {
             showError("发送失败：" + error.getMessage());
         }
