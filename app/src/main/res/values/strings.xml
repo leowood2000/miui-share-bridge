@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">小米互传桥接</string>
+    <string name="bridge_description">把原生分享面板的文件转交给小米互联发送入口</string>
+</resources>
