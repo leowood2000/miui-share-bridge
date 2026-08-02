@@ -8,6 +8,7 @@ import android.content.ServiceConnection;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.os.Parcel;
 import android.os.RemoteException;
 import android.view.View;
 import android.widget.ArrayAdapter;
@@ -15,48 +16,58 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 
-import com.miui.mishare.MiShareTask;
-import com.miui.mishare.RemoteDevice;
-import com.leowood.miuisharebridge.aidl.IMiShareDiscoverCallback;
-import com.leowood.miuisharebridge.aidl.IMiShareService;
-
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/** Receives ACTION_SEND and uses Xiaomi's private MiShare AIDL when privileged. */
+/** Receives ACTION_SEND and calls the MIUI framework AIDL proxy on HyperOS. */
 public final class ShareReceiverActivity extends Activity {
     private static final String TARGET_PACKAGE = "com.miui.mishare.connectivity";
-    private final Map<String, RemoteDevice> devices = new LinkedHashMap<>();
+    private static final String SERVICE_CLASS = TARGET_PACKAGE + ".MiShareService";
+    private static final String SERVICE_API = "com.miui.mishare.IMiShareService";
+    private static final String CALLBACK_API = "com.miui.mishare.IMiShareDiscoverCallback";
+    private static final String DEVICE_CLASS = "com.miui.mishare.RemoteDevice";
+    private static final String TASK_CLASS = "com.miui.mishare.MiShareTask";
+    private static final String CALLBACK_DESCRIPTOR = CALLBACK_API;
+    private static final int CALLBACK_DEVICE_UPDATED = 1;
+    private static final int CALLBACK_DEVICE_LOST = 2;
+
+    private final Map<String, Object> devices = new LinkedHashMap<>();
     private final ArrayList<String> labels = new ArrayList<>();
     private ArrayAdapter<String> adapter;
     private TextView status;
     private Intent source;
-    private IMiShareService service;
+    private Object service;
+    private Class<?> serviceApi;
+    private Class<?> callbackType;
+    private Object callbackProxy;
+    private CallbackBinder callbackBinder;
     private boolean bound;
-
-    private final IMiShareDiscoverCallback callback = new IMiShareDiscoverCallback.Stub() {
-        @Override public void onDeviceUpdated(RemoteDevice device) {
-            if (device == null || device.getDeviceId() == null) return;
-            runOnUiThread(() -> addDevice(device));
-        }
-
-        @Override public void onDeviceLost(String deviceId) {
-            runOnUiThread(() -> removeDevice(deviceId));
-        }
-    };
 
     private final ServiceConnection connection = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder binder) {
             bound = true;
-            service = IMiShareService.Stub.asInterface(binder);
-            status.setText("正在搜索附近的小米互传设备…");
             try {
-                service.enable();
-                service.discover(callback);
-            } catch (RemoteException error) {
-                showError("MiShare 服务调用失败：" + error.getMessage());
+                serviceApi = Class.forName(SERVICE_API);
+                Class<?> stub = Class.forName(SERVICE_API + "$Stub");
+                service = stub.getMethod("asInterface", IBinder.class).invoke(null, binder);
+                callbackType = Class.forName(CALLBACK_API);
+                callbackBinder = new CallbackBinder(Class.forName(DEVICE_CLASS));
+                callbackProxy = Proxy.newProxyInstance(callbackType.getClassLoader(),
+                        new Class<?>[]{callbackType}, new CallbackHandler(callbackBinder));
+                status.setText("正在搜索附近的小米互传设备…");
+                try { invokeService("enable", new Class<?>[0]); }
+                catch (Exception ignored) { /* Some HyperOS builds enable internally. */ }
+                invokeService("discover", new Class<?>[]{callbackType}, callbackProxy);
+            } catch (Exception error) {
+                showError("MiShare AIDL 初始化失败：" + rootMessage(error));
             }
         }
 
@@ -78,15 +89,14 @@ public final class ShareReceiverActivity extends Activity {
         }
         grantSourceUris();
         Intent serviceIntent = new Intent().setComponent(new ComponentName(
-                TARGET_PACKAGE, TARGET_PACKAGE + ".MiShareService"));
+                TARGET_PACKAGE, SERVICE_CLASS));
         try {
             if (!bindService(serviceIntent, connection, BIND_AUTO_CREATE)) {
                 showError("无法连接 MiShare 服务");
             }
         } catch (SecurityException error) {
             showError("普通 APK 无法调用 MiShareService。\n\n"
-                    + "系统返回：Not allowed to bind to service\n\n"
-                    + "需要把本应用安装为系统特权应用，或使用与 MIShare 相同的系统签名。");
+                    + "请将本应用安装为系统特权应用，并授予 MiShare 权限。");
         }
     }
 
@@ -102,26 +112,35 @@ public final class ShareReceiverActivity extends Activity {
         adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, labels);
         list.setAdapter(adapter);
         list.setOnItemClickListener((parent, view, position, id) -> {
-            if (position < labels.size()) sendTo(devices.get(new ArrayList<>(devices.keySet()).get(position)));
+            if (position < labels.size()) {
+                String deviceId = new ArrayList<>(devices.keySet()).get(position);
+                sendTo(devices.get(deviceId));
+            }
         });
         root.addView(list, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(root);
     }
 
-    private void addDevice(RemoteDevice device) {
-        String id = device.getDeviceId();
-        String label = id;
-        Bundle extras = device.getExtras();
-        if (extras != null) {
-            String nickname = extras.getString(RemoteDevice.KEY_NICKNAME);
-            String model = extras.getString(RemoteDevice.KEY_DEVICE_MODEL);
-            if (nickname != null && !nickname.isEmpty()) label = nickname;
-            else if (model != null && !model.isEmpty()) label = model;
+    private void addDevice(Object device) {
+        try {
+            Method getId = device.getClass().getMethod("getDeviceId");
+            String id = (String) getId.invoke(device);
+            if (id == null) return;
+            String label = id;
+            Bundle extras = (Bundle) device.getClass().getMethod("getExtras").invoke(device);
+            if (extras != null) {
+                String nickname = extras.getString("nickname");
+                String model = extras.getString("device_model");
+                if (nickname != null && !nickname.isEmpty()) label = nickname;
+                else if (model != null && !model.isEmpty()) label = model;
+            }
+            if (!devices.containsKey(id)) labels.add(label);
+            devices.put(id, device);
+            adapter.notifyDataSetChanged();
+            status.setText("选择要发送到的设备：");
+        } catch (Exception error) {
+            showError("读取设备信息失败：" + rootMessage(error));
         }
-        if (!devices.containsKey(id)) labels.add(label);
-        devices.put(id, device);
-        adapter.notifyDataSetChanged();
-        status.setText("选择要发送到的设备：");
     }
 
     private void removeDevice(String id) {
@@ -132,7 +151,7 @@ public final class ShareReceiverActivity extends Activity {
         adapter.notifyDataSetChanged();
     }
 
-    private void sendTo(RemoteDevice device) {
+    private void sendTo(Object device) {
         if (device == null || service == null) return;
         ClipData clipData = source.getClipData();
         if (clipData == null) {
@@ -143,19 +162,41 @@ public final class ShareReceiverActivity extends Activity {
             showError("分享请求没有文件 URI");
             return;
         }
-        MiShareTask task = new MiShareTask();
-        task.send = true;
-        task.taskId = UUID.randomUUID().toString();
-        task.count = clipData.getItemCount();
-        task.device = device;
-        task.clipData = clipData;
-        task.mimeType = source.getType();
         try {
-            service.send(task);
-            status.setText("已提交发送任务：" + task.count + " 个文件");
-        } catch (RemoteException error) {
-            showError("发送失败：" + error.getMessage());
+            Class<?> taskType = Class.forName(TASK_CLASS);
+            Constructor<?> ctor = taskType.getDeclaredConstructor();
+            ctor.setAccessible(true);
+            Object task = ctor.newInstance();
+            setField(taskType, task, "send", true);
+            setField(taskType, task, "taskId", UUID.randomUUID().toString());
+            setField(taskType, task, "count", clipData.getItemCount());
+            setField(taskType, task, "device", device);
+            setField(taskType, task, "clipData", clipData);
+            setField(taskType, task, "mimeType", source.getType());
+            invokeService("send", new Class<?>[]{taskType}, task);
+            status.setText("已提交发送任务：" + clipData.getItemCount() + " 个文件");
+        } catch (Exception error) {
+            showError("发送失败：" + rootMessage(error));
         }
+    }
+
+    private Object invokeService(String methodName, Class<?>[] parameterTypes, Object... args)
+            throws Exception {
+        Method method = serviceApi.getMethod(methodName, parameterTypes);
+        try {
+            return method.invoke(service, args);
+        } catch (InvocationTargetException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof Exception) throw (Exception) cause;
+            throw error;
+        }
+    }
+
+    private static void setField(Class<?> type, Object object, String name, Object value)
+            throws Exception {
+        Field field = type.getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(object, value);
     }
 
     private void grantSourceUris() {
@@ -172,14 +213,64 @@ public final class ShareReceiverActivity extends Activity {
     }
 
     private void showError(String message) {
-        if (status != null) status.setText(message);
+        if (status != null) runOnUiThread(() -> status.setText(message));
+    }
+
+    private static String rootMessage(Throwable error) {
+        Throwable current = error;
+        while (current.getCause() != null) current = current.getCause();
+        return current.getClass().getSimpleName() + ": " + current.getMessage();
     }
 
     @Override protected void onDestroy() {
         if (bound) {
-            try { if (service != null) service.stopDiscover(callback); } catch (RemoteException ignored) { }
+            try {
+                if (service != null && callbackProxy != null) {
+                    invokeService("stopDiscover", new Class<?>[]{callbackType}, callbackProxy);
+                }
+            } catch (Exception ignored) { }
             unbindService(connection);
         }
         super.onDestroy();
+    }
+
+    private final class CallbackHandler implements InvocationHandler {
+        private final IBinder binder;
+        CallbackHandler(IBinder binder) { this.binder = binder; }
+        @Override public Object invoke(Object proxy, Method method, Object[] args) {
+            if ("asBinder".equals(method.getName())) return binder;
+            if ("toString".equals(method.getName())) return "MiShareBridgeCallback";
+            return null;
+        }
+    }
+
+    private final class CallbackBinder extends android.os.Binder {
+        private final Class<?> deviceType;
+        CallbackBinder(Class<?> deviceType) {
+            this.deviceType = deviceType;
+            attachInterface(null, CALLBACK_DESCRIPTOR);
+        }
+
+        @Override public boolean onTransact(int code, Parcel data, Parcel reply, int flags)
+                throws RemoteException {
+            if (code == INTERFACE_TRANSACTION) {
+                reply.writeString(CALLBACK_DESCRIPTOR);
+                return true;
+            }
+            data.enforceInterface(CALLBACK_DESCRIPTOR);
+            if (code == CALLBACK_DEVICE_UPDATED) {
+                try {
+                    Object device = data.readParcelable(deviceType.getClassLoader());
+                    runOnUiThread(() -> addDevice(device));
+                } catch (RuntimeException ignored) { }
+                return true;
+            }
+            if (code == CALLBACK_DEVICE_LOST) {
+                String id = data.readString();
+                runOnUiThread(() -> removeDevice(id));
+                return true;
+            }
+            return super.onTransact(code, data, reply, flags);
+        }
     }
 }
