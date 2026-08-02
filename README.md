@@ -14,17 +14,35 @@ com.miui.mishare.PERMISSION.ALL  (signature|privileged)
 
 要实际发送，需要把应用作为系统特权应用安装，并让系统授予上述权限，或使用与系统 MIShare 相同的签名。不同 HyperOS 版本的特权权限白名单和 SELinux 规则可能不同，不能仅靠 APK 自己绕过。
 
-## 使用
+## 安装（KernelSU）
 
-1. 安装 APK。
-2. 在文件管理器的原生分享面板选择“**小米互传桥接**”。
-3. 特权环境下应用会列出附近设备，点击设备即可发送。
+普通 APK 安装不能获得 MIShare 的特权权限。推荐使用 Release 中的 KernelSU 模块：
+
+1. 在 KernelSU 中先安装 `meta-overlayfs` metamodule，并按提示重启。
+2. 安装 `miui-share-bridge-privileged-ksu-system-*.zip`，再重启手机。
+3. 在文件管理器的原生分享面板选择“**小米互传桥接**”。
+4. 选择附近设备即可发送。
+
+如果重启后分享面板没有刷新，可以执行：
+
+```text
+adb shell pm enable com.leowood.miuisharebridge
+```
+
+APK 仅适合调试或手动安装验证；不具备系统特权时无法实际调用 MIShare 服务。
 
 ## 已验证环境
 
 - 设备：Xiaomi 24122RKC7C
 - 系统：HyperOS `OS2.0.15.0.VOMCNXM` / Android 15
 - MiShare：`com.miui.mishare.connectivity` `3.3.1-103101`
+
+## 已验证功能
+
+- 原生分享面板入口
+- MIShare 设备发现
+- 通过电脑端 MIShare 发送文件
+- Android 15 刘海屏的状态栏、导航栏 Insets 适配
 
 ## 构建
 
