@@ -15,6 +15,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.widget.ArrayAdapter;
 import android.widget.LinearLayout;
 import android.widget.ListView;
@@ -73,6 +74,7 @@ public final class ShareReceiverActivity extends Activity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         if (getActionBar() != null) getActionBar().hide();
+        configureSystemBars();
         source = getIntent();
         buildUi();
         if (!Intent.ACTION_SEND.equals(source.getAction())
@@ -91,6 +93,27 @@ public final class ShareReceiverActivity extends Activity {
             showError("普通 APK 无法调用 MiShareService。\n\n"
                     + "请将本应用安装为系统特权应用，并授予 MiShare 权限。");
         }
+    }
+
+    private void configureSystemBars() {
+        int lightBars = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        if (Build.VERSION.SDK_INT >= 26) lightBars |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        View decor = getWindow().getDecorView();
+        decor.setSystemUiVisibility(decor.getSystemUiVisibility() | lightBars);
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController controller = getWindow().getInsetsController();
+            if (controller != null) {
+                int appearance = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                        | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                controller.setSystemBarsAppearance(appearance, appearance);
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 29) {
+            getWindow().setStatusBarContrastEnforced(false);
+            getWindow().setNavigationBarContrastEnforced(false);
+        }
+        getWindow().setStatusBarColor(Color.rgb(248, 247, 255));
+        getWindow().setNavigationBarColor(Color.WHITE);
     }
 
     private void buildUi() {
