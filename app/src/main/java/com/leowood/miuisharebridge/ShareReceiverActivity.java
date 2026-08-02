@@ -1,43 +1,51 @@
 package com.leowood.miuisharebridge;
 
 import android.app.Activity;
-import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ComponentName;
+import android.content.ServiceConnection;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.IBinder;
+import android.util.Log;
 import android.widget.Toast;
 
 import java.util.ArrayList;
 
-/** Receives a normal Android share and forwards it to Xiaomi's existing sender activity. */
+/** Receives a normal Android share and probes Xiaomi's private MiShare service. */
 public final class ShareReceiverActivity extends Activity {
-    private static final String TARGET_PACKAGE = "com.miui.newmidrive";
-    private static final String TARGET_ACTIVITY = "com.miui.newmidrive.ui.SendFileIntermediaryActivity";
+    private static final String TAG = "MiShareBridge";
+    private static final String TARGET_PACKAGE = "com.miui.mishare.connectivity";
+    private boolean bound;
+    private final ServiceConnection connection = new ServiceConnection() {
+        @Override public void onServiceConnected(ComponentName name, IBinder service) {
+            bound = true;
+            Log.i(TAG, "MiShare service connected: " + name);
+            fail("已连接小米互传服务，正在继续开发发送流程");
+        }
+
+        @Override public void onServiceDisconnected(ComponentName name) {
+            bound = false;
+            Log.w(TAG, "MiShare service disconnected: " + name);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        forward(getIntent());
+        probe(getIntent());
     }
 
-    private void forward(Intent source) {
+    private void probe(Intent source) {
         String action = source.getAction();
         if (!Intent.ACTION_SEND.equals(action) && !Intent.ACTION_SEND_MULTIPLE.equals(action)) {
             fail("不是文件分享 Intent");
             return;
         }
 
-        Intent target = new Intent(source);
-        target.setComponent(new ComponentName(TARGET_PACKAGE, TARGET_ACTIVITY));
-        target.setPackage(TARGET_PACKAGE);
-        target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP
-                | Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
         ClipData clipData = source.getClipData();
         if (clipData != null) {
-            target.setClipData(clipData);
             grantClipData(clipData);
         }
         Uri single = source.getParcelableExtra(Intent.EXTRA_STREAM, Uri.class);
@@ -51,11 +59,16 @@ public final class ShareReceiverActivity extends Activity {
             }
         }
 
+        Intent service = new Intent();
+        service.setComponent(new ComponentName(TARGET_PACKAGE,
+                "com.miui.mishare.connectivity.MiShareService"));
         try {
-            startActivity(target);
-            finish();
-        } catch (ActivityNotFoundException | SecurityException error) {
-            fail("小米互联发送入口不可用：" + error.getClass().getSimpleName());
+            if (!bindService(service, connection, BIND_AUTO_CREATE)) {
+                fail("无法连接小米互传服务：bindService 返回 false");
+            }
+        } catch (SecurityException error) {
+            Log.e(TAG, "MiShare bind rejected", error);
+            fail("小米互传服务拒绝普通应用：需要系统签名/特权权限");
         }
     }
 
