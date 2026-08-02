@@ -15,10 +15,10 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 
-import com.miui.mishare.IMiShareDiscoverCallback;
-import com.miui.mishare.IMiShareService;
 import com.miui.mishare.MiShareTask;
 import com.miui.mishare.RemoteDevice;
+import com.leowood.miuisharebridge.aidl.IMiShareDiscoverCallback;
+import com.leowood.miuisharebridge.aidl.IMiShareService;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
