@@ -69,6 +69,7 @@ public final class ShareReceiverActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        if (getActionBar() != null) getActionBar().hide();
         source = getIntent();
         buildUi();
         if (!Intent.ACTION_SEND.equals(source.getAction())
