@@ -6,6 +6,7 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Build;
@@ -101,7 +102,7 @@ public final class ShareReceiverActivity extends Activity {
             int top;
             int bottom;
             if (Build.VERSION.SDK_INT >= 30) {
-                WindowInsets.Insets bars = insets.getInsets(
+                Insets bars = insets.getInsets(
                         WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
                 top = bars.top;
                 bottom = bars.bottom;
